@@ -1,0 +1,16 @@
+
+int boat_init (boat *barco, unsigned long userid, char nav_status, unsigned char rot,
+    int sog, int cog, char pos_acc, long longitude, long latitude)
+{
+    barco->userid = userid;
+    barco->nav_status = nav_status;
+    barco->rot = rot;
+    barco->sog = sog;
+    barco->cog = cog;
+    barco->pos_acc = pos_acc;
+    barco->longitude = longitude;
+    barco->latitude = latitude;
+    return 0;
+}
+
+

@@ -1,0 +1,145 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+
+#include "portable.h"
+#include "nmea.h"
+#include "sixbit.h"
+#include "vdm_parse.h"
+
+#include "naves.h"
+#define PI 3.14159265
+
+
+float conv_from_knots (float speed)
+{   
+    /*  1 knot 
+    ->MPH = 1.15078
+    ->KPH = 1.852
+    ->Meter/Seg = 0.514444444444
+    ->Feet/Seg = 1.68781
+    */ 
+    speed = speed/3600; 
+    return speed;
+}
+
+int boat_init (boat *barco, unsigned long userid, char nav_status, unsigned char rot,
+    int sog, int cog, char pos_acc, double lat, double lon)
+{   
+    long latitude, longitude;
+    barco->userid = userid;
+    barco->nav_status = nav_status;
+    barco->rot = rot;
+    barco->sog = sog;
+    barco->cog = cog;
+    barco->pos_acc = pos_acc;
+    ddd2pos(lat, lon, &latitude, &longitude);
+    inv_conv_pos(&latitude, &longitude);
+    barco->longitude = longitude;
+    barco->latitude = latitude;
+
+    printf ("Se inicia el barco %ld.\n", barco->userid);
+    return 0;
+}
+
+int boat_new_pos(boat *barco, float time)
+{
+    /*
+        sin(0)  =0  : cos(0)  =1  => +y
+        sin(90) =1  : cos(90) =0  => +x
+        sin(180)=0  : cos(180)=-1 => -y
+        sin(270)=-1 : cos(270)= 0 =>-x
+    */
+    if (barco->sog == 1023)
+    {
+        printf("Velocidad no disponible\n");
+        return 1;
+    }
+    float speed = barco->sog / 10;
+    speed = conv_from_knots(speed);// Milla maritima por segundo.
+    float dist = speed * time * 60; // Distancia recorrida. 'time' se expresa en minutos.
+    double lat, lon;
+    long latitude = barco->latitude;
+    long longitude = barco->longitude;
+    double cog = barco->cog * PI/180; // Convierte Grados en Radianes para las funciones sin y cos.
+    
+    conv_pos(&latitude, &longitude);
+    pos2ddd(latitude, longitude, &lat, &lon);
+    lon += cos(cog) * dist;
+    lat += sin(cog) * dist;
+    ddd2pos(lat, lon, &latitude, &longitude);
+    inv_conv_pos(&latitude, &longitude);
+    barco->latitude = latitude;
+    barco->longitude = longitude;
+    
+    return 0;
+    
+}
+
+char* boat_message(boat *barco)
+{
+    aismsg_1* msg_1 = (aismsg_1*) malloc (sizeof (aismsg_1));
+    memset(msg_1, 0, sizeof(aismsg_1));
+    msg_1->msgid = 1;
+    msg_1->repeat = (char) 0; //??
+    msg_1->userid = barco->userid;
+    msg_1->nav_status = barco->nav_status;
+    msg_1->rot = barco->rot;
+    msg_1->sog = barco->sog;
+    msg_1->pos_acc = barco->pos_acc;
+    msg_1->longitude = barco->longitude;
+    msg_1->latitude = barco->latitude;
+    msg_1->cog = barco->cog;
+    msg_1->true = 0; //??
+    msg_1->utc_sec = (char) 60; //??
+    msg_1->regional = (char) 0; //??
+    msg_1->spare = (char) 0; //??
+    msg_1->raim = (char) 0; //??
+    msg_1->sync_state = (char) 0; //??
+    msg_1->slot_timeout = (char) 0; //??
+    msg_1->sub_message = 0; //??
+    char message[256];
+    memset(message, 0, 256);
+	ais_binary_encode_1(msg_1, message, 0);
+    free(msg_1);
+	return assemble_message(message);
+     
+}
+
+float distancia (int cog_a, int cog_b, float speed_a, float speed_b, long la_a, long lo_a, long la_b, long lo_b)
+{   
+    conv_pos(&la_a, &lo_a);
+    conv_pos(&la_b, &lo_b);
+    double lat_a ,lon_a ,lat_b ,lon_b;
+    pos2ddd(la_a, lo_a, &lat_a, &lon_a); pos2ddd(la_b, lo_b, &lat_b, &lon_b);
+    // tcpa -> time to the closest point of approach.
+    // mdcpa -> minimum distance of aproach.
+    float d_vx, d_vy, d_x, d_y, v_xa, v_xb, v_ya, v_yb, tcpa, mdcpa; 
+    cog_a = cog_a * PI/180;
+    cog_b = cog_b * PI/180;
+    v_xa = speed_a * sin(cog_a);
+    v_xb = speed_b * sin(cog_b);
+    v_ya = speed_a * cos(cog_a);
+    v_yb = speed_b * sin(cog_b);
+    d_vx = v_xa - v_xb;
+    d_vy = v_ya - v_yb;
+    d_x = lat_a - lat_b;
+    d_y = lon_a - lon_b;
+    tcpa = -( (d_vx * d_x) + (d_vy * d_y) ) / ( pow(d_vx, 2) + pow(d_vy, 2) );
+    if (tcpa < 0) return -1;
+    // Un valor negativo indica rutas divergentes. Un valor positivo indica el tiempo restante para alcanzar mdcpa.
+    mdcpa = (pow(d_vx, 2) + pow(d_vy, 2)) * (pow (tcpa, 2));
+    mdcpa += ( (d_vx * d_x) + (d_vy * d_y) ) * tcpa;
+    mdcpa +=  pow(d_x, 2)) + pow(d_y, 2)) );
+    mdcpa = sqrt(mdcpa);
+    // Distancia mínima que llegaran a tener las naves (mdcpa).
+    float x_a_cpa, x_b_cpa, y_a_cpa, y_b_cpa;
+    x_a_cpa = lat_a + v_xa * tcpa;
+    y_a_cpa = lon_a + v_ya * tcpa;
+    x_b_cpa = lat_b + v_xb * tcpa;
+    y_b_cpa = lon_b + v_ya * tcpa;
+    // Coordenadas de ambos barcos donde estarán a distancia mínima (mdcpa).
+    return mdcpa;
+}

@@ -1,0 +1,69 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include "naves.h"
+#include "msg_list.h"
+
+int thread_count;
+pthread_mutex_t lock;
+message_list* list;
+
+void* boat_thread(void* num);
+void* receptor(void* num);
+
+int main()
+{   
+	long thread;
+	pthread_t* thread_handler;
+    list = NULL;
+	thread_count = 1;
+    thread_handler = malloc (thread_count * sizeof (pthread_t));
+    
+	for(thread = 0 ; thread < thread_count ; thread++)
+        pthread_create(&thread_handler[thread], NULL, boat_thread, (void*) thread);
+    pthread_create(&thread_handler[thread], NULL, receptor, (void*) thread);
+   
+
+    for(thread = 0 ; thread < thread_count ; thread++)
+        pthread_join(thread_handler[thread], NULL);
+    pthread_join(thread_handler[thread], NULL);
+    return 0;
+}
+
+
+void* boat_thread(void* num)
+{   
+    printf("hola");
+    // Inicializa el barco
+    boat* barco;
+    barco = (boat *) malloc (sizeof ( boat ));
+    unsigned long userid = 200000000 + (int) num;
+    boat_init(barco, userid, 0, 0, 0, 0, 0, 0, 0);
+    
+    char* msg;
+	while(1)
+    {	
+        
+        pthread_mutex_lock(&lock);
+        list = add_message(list, msg);
+        pthread_mutex_unlock(&lock);
+        sleep(2);
+    }
+}
+
+void* receptor(void* num) 
+{   
+    char msg[256];
+    while (1)
+    {
+        if (list != NULL)
+        {   
+            pthread_mutex_lock(&lock);
+            list = remove_message(list, msg);
+            pthread_mutex_unlock(&lock);
+            printf("%s\n",msg);
+        }
+        usleep(500);
+    }
+}
+

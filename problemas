@@ -1,0 +1,16 @@
+Cálculo de la posición -> falta precisión al usar un long . Uso de las funciones c++?
+    funciones de cambio de precisión de latitud y longitud. pos2ddd y conv_pos invertido!
+    funciones de LatLon_UTM!! conversion a c desde c++
+
+Soluciones -> convertir a formato DD.DDDDDD, hacer el calculo de la nueva posición, multiplicar el resultado por 600000 para volver a convertirlo en long. 
+
+
+A Ajustar:
+    *Forma de obtener las posiciones GPS a partir de LatLon_UTM.
+    *Cálculo de conversion de DD.DDDD a 1/10000. -> ddd2pos();
+    
+    
+    Ajustar el ratio distancia/coordenadas ( un poco más real )
+    Generar un barco asociado al receptor el cual manejaremos.
+    Crear algoritmo de deteccion de colision.
+    Implementar algoritmos de evasión.

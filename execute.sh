@@ -1,0 +1,1 @@
+make boatSimulator && clear && ./boatSimulator
